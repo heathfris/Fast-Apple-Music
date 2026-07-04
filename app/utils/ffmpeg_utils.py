@@ -1,0 +1,104 @@
+"""FFmpeg 命令构建辅助函数"""
+import os
+import subprocess
+import shutil
+
+# 需要从源文件清除的非标准元数据字段
+STRIP_TAGS = [
+    "comment",
+    "information",
+    "encoder",
+    "major_brand",
+    "minor_version",
+    "compatible_brands",
+]
+
+
+def check_ffmpeg_available() -> bool:
+    """检查 FFmpeg 是否在系统 PATH 中可用"""
+    return shutil.which("ffmpeg") is not None
+
+
+def build_convert_command(input_path: str, output_path: str, target_format: str) -> list[str]:
+    """
+    构建 FFmpeg 转换命令。
+    输入可能是 FLAC/WAV/AIFF/ALAC24bit，输出为 Apple Music 兼容格式。
+    """
+    cmd = ["ffmpeg", "-y", "-i", input_path]
+
+    # 音频编码器选择
+    if target_format == "alac":
+        codec = "alac"
+        sample_fmt = "s16p"  # ALAC 编码器要求 planar 格式
+    elif target_format == "mp3":
+        codec = "libmp3lame"
+        sample_fmt = None
+    elif target_format == "aac":
+        codec = "aac"
+        sample_fmt = None
+    else:
+        codec = "alac"
+        sample_fmt = "s16p"
+
+    cmd.extend(["-acodec", codec])
+
+    # 位深度：强制 16-bit
+    if sample_fmt:
+        cmd.extend(["-sample_fmt", sample_fmt])
+
+    # 清除元数据标记
+    for tag in STRIP_TAGS:
+        cmd.extend(["-metadata", f"{tag}="])
+
+    # 输出
+    cmd.append(output_path)
+    return cmd
+
+
+def build_probe_command(path: str) -> list[str]:
+    """构建 ffprobe 分析命令"""
+    return [
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-show_format", "-show_streams", path
+    ]
+
+
+def run_ffmpeg(cmd: list[str], timeout: int = 300) -> tuple[bool, str]:
+    """
+    执行 FFmpeg 命令，返回 (成功与否, 错误信息)。
+    timeout 默认 5 分钟。
+    """
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return True, ""
+        stderr = result.stderr
+        if stderr:
+            try:
+                err_msg = stderr.decode("utf-8", errors="replace")
+            except Exception:
+                err_msg = str(stderr)
+            return False, err_msg[-200:]
+        return False, f"Exit code: {result.returncode}"
+    except subprocess.TimeoutExpired:
+        return False, "转换超时（超过 5 分钟）"
+    except FileNotFoundError:
+        return False, "FFmpeg 未安装或不在 PATH 中"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+def get_output_path(input_path: str, output_dir: str, target_format: str) -> str:
+    """
+    根据输入文件路径生成输出文件路径。
+    例: /music/song.flac → /music/song.m4a (ALAC/MP3)
+                         → /music/song.aac (AAC)
+    """
+    ext_map = {"alac": ".m4a", "mp3": ".mp3", "aac": ".m4a"}
+    ext = ext_map.get(target_format, ".m4a")
+    basename = os.path.splitext(os.path.basename(input_path))[0]
+    return os.path.join(output_dir, f"{basename}{ext}")
