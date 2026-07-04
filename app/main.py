@@ -5,6 +5,7 @@ import tempfile
 from PySide6.QtCore import QUrl, QObject, Slot, Signal, Property, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtWidgets import QFileDialog, QApplication
 
 from app.engine.converter import ConversionEngine
 from app.engine.worker import TaskWorker
@@ -60,6 +61,18 @@ class AppBridge(QObject):
     def clear_files(self):
         self._files.clear()
         self.filesChanged.emit()
+
+    @Slot()
+    def open_file_dialog(self):
+        """打开文件选择对话框"""
+        paths, _ = QFileDialog.getOpenFileNames(
+            None,
+            "选择音频文件",
+            "",
+            "音频文件 (*.mp3 *.flac *.wav *.aiff *.aac *.m4a *.alac *.wma *.ogg);;所有文件 (*.*)"
+        )
+        if paths:
+            self.add_files(paths)
 
     # --- 转换 ---
 
@@ -195,7 +208,7 @@ class AppBridge(QObject):
 
 
 def main():
-    app = QGuiApplication(sys.argv)
+    app = QApplication(sys.argv)
     app.setOrganizationName("FastAppleMusic")
     app.setApplicationName("Fast Apple Music")
 

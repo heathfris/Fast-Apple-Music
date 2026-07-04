@@ -11,6 +11,33 @@ Rectangle {
     property var files: []
     property var selectedIndices: []
 
+    // 全区域 DropArea — 覆盖整个文件列表，空列表也能拖入
+    DropArea {
+        id: fullDropArea
+        anchors.fill: parent
+        keys: ["text/uri-list"]
+        onDropped: function(drop) {
+            if (drop.hasUrls && typeof bridge !== "undefined") {
+                var paths = [];
+                for (var i = 0; i < drop.urls.length; i++) {
+                    var raw = String(drop.urls[i]);
+                    // 处理不同平台的 URL 格式
+                    if (raw.startsWith("file:///")) {
+                        raw = raw.replace("file:///", "");
+                    } else if (raw.startsWith("file://")) {
+                        raw = raw.replace("file://", "");
+                    }
+                    // Windows 路径处理
+                    if (raw.indexOf(":") > 0 && raw[0] === "/") {
+                        raw = raw.substring(1);
+                    }
+                    paths.push(raw);
+                }
+                bridge.add_files(paths);
+            }
+        }
+    }
+
     Column {
         anchors.fill: parent
 
@@ -26,6 +53,16 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
 
+                GlassButton {
+                    btnText: "选择文件"
+                    accentColor: "#3A3A3C"
+                    onClicked: {
+                        // 通过 bridge 触发文件对话框
+                        if (typeof bridge !== "undefined") {
+                            bridge.open_file_dialog();
+                        }
+                    }
+                }
                 GlassButton {
                     btnText: "全选"
                     accentColor: "#3A3A3C"
@@ -73,21 +110,6 @@ Rectangle {
                 width: listView.width
                 height: 48
                 color: index % 2 === 0 ? "#1A1A1A" : "#1E1E1E"
-
-                DropArea {
-                    anchors.fill: parent
-                    onEntered: parent.color = "#2A2A2A"
-                    onExited: parent.color = index % 2 === 0 ? "#1A1A1A" : "#1E1E1E"
-                    onDropped: function(drop) {
-                        if (drop.hasUrls && typeof bridge !== "undefined") {
-                            var paths = [];
-                            for (var i = 0; i < drop.urls.length; i++) {
-                                paths.push(String(drop.urls[i]).replace("file:///", ""));
-                            }
-                            bridge.add_files(paths);
-                        }
-                    }
-                }
 
                 Row {
                     anchors.fill: parent
@@ -161,9 +183,10 @@ Rectangle {
     // 空状态提示
     Text {
         anchors.centerIn: parent
-        text: "拖入音频文件到这里"
+        text: "拖入音频文件到这里\n或点击「选择文件」"
         color: "#555555"
         font.pixelSize: 18
+        horizontalAlignment: Text.AlignHCenter
         font.family: Qt.platform.os === "osx" ? "SF Pro Display" : "Segoe UI"
         visible: fileList.files.length === 0
     }
