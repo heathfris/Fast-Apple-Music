@@ -29,7 +29,7 @@ def analyze_file(path: str) -> AudioFile:
 
         stdout_text = result.stdout.decode("utf-8", errors="replace")
         data = json.loads(stdout_text)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
         af = AudioFile(path=path)
         af.status = AudioStatus.FAILED
         af.error_message = f"文件分析失败: {str(e)[:100]}"

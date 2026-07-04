@@ -11,6 +11,15 @@ Rectangle {
 
     property var currentTags: ({})
 
+    // 监听 bridge 加载的标签数据
+    Connections {
+        target: bridge
+        function onTagsLoaded(tags) {
+            metadataPanel.currentTags = tags;
+            metadataPanel.currentTags["_changed"] = false;
+        }
+    }
+
     Flickable {
         anchors.fill: parent
         anchors.margins: 16

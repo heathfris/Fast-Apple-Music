@@ -95,10 +95,17 @@ def run_ffmpeg(cmd: list[str], timeout: int = 300) -> tuple[bool, str]:
 def get_output_path(input_path: str, output_dir: str, target_format: str) -> str:
     """
     根据输入文件路径生成输出文件路径。
-    例: /music/song.flac → /music/song.m4a (ALAC/MP3)
-                         → /music/song.aac (AAC)
+    同名文件通过父目录缩写来区分，避免覆盖。
     """
     ext_map = {"alac": ".m4a", "mp3": ".mp3", "aac": ".m4a"}
     ext = ext_map.get(target_format, ".m4a")
     basename = os.path.splitext(os.path.basename(input_path))[0]
-    return os.path.join(output_dir, f"{basename}{ext}")
+    output_path = os.path.join(output_dir, f"{basename}{ext}")
+
+    # 如果已有同名输出文件（不同源目录的同名文件），用父目录名区分
+    if os.path.exists(output_path) and os.path.abspath(output_path) != os.path.abspath(input_path):
+        parent = os.path.basename(os.path.dirname(input_path))
+        if parent:
+            output_path = os.path.join(output_dir, f"{basename}_{parent}{ext}")
+
+    return output_path

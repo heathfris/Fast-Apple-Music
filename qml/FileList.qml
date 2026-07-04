@@ -11,6 +11,20 @@ Rectangle {
     property var files: []
     property var selectedIndices: []
 
+    // 监听 bridge 数据变化 — 核心连接
+    Connections {
+        target: bridge
+        function onFilesChanged() {
+            fileList.files = bridge.get_all_files();
+        }
+    }
+
+    Component.onCompleted: {
+        if (typeof bridge !== "undefined") {
+            fileList.files = bridge.get_all_files();
+        }
+    }
+
     // 全区域 DropArea — 覆盖整个文件列表，空列表也能拖入
     DropArea {
         id: fullDropArea
@@ -21,13 +35,11 @@ Rectangle {
                 var paths = [];
                 for (var i = 0; i < drop.urls.length; i++) {
                     var raw = String(drop.urls[i]);
-                    // 处理不同平台的 URL 格式
                     if (raw.startsWith("file:///")) {
                         raw = raw.replace("file:///", "");
                     } else if (raw.startsWith("file://")) {
                         raw = raw.replace("file://", "");
                     }
-                    // Windows 路径处理
                     if (raw.indexOf(":") > 0 && raw[0] === "/") {
                         raw = raw.substring(1);
                     }
@@ -41,7 +53,6 @@ Rectangle {
     Column {
         anchors.fill: parent
 
-        // 头部 — 操作按钮
         Rectangle {
             width: parent.width
             height: 44
@@ -57,7 +68,6 @@ Rectangle {
                     btnText: "选择文件"
                     accentColor: "#3A3A3C"
                     onClicked: {
-                        // 通过 bridge 触发文件对话框
                         if (typeof bridge !== "undefined") {
                             bridge.open_file_dialog();
                         }
@@ -86,14 +96,12 @@ Rectangle {
             }
         }
 
-        // 分隔线
         Rectangle {
             width: parent.width
             height: 1
             color: Qt.rgba(1, 1, 1, 0.06)
         }
 
-        // 文件列表
         ListView {
             id: listView
             width: parent.width
@@ -180,7 +188,6 @@ Rectangle {
         }
     }
 
-    // 空状态提示
     Text {
         anchors.centerIn: parent
         text: "拖入音频文件到这里\n或点击「选择文件」"

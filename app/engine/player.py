@@ -55,15 +55,13 @@ class PlayerController(QObject):
 
     @Slot()
     def toggle_play(self):
-        """播放/暂停切换"""
+        """播放/暂停切换 — _on_state_changed 通过信号自动更新 _is_playing"""
         if self._is_playing:
             self._player.pause()
         else:
             if self._player.source().isEmpty():
                 return
             self._player.play()
-        self._is_playing = not self._is_playing
-        self.playingChanged.emit()
 
     @Slot()
     def pause(self):

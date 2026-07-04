@@ -7,10 +7,11 @@ Rectangle {
     height: 56
     color: "#2C2C2E"
 
-    property string currentTitle: ""
-    property bool isPlaying: false
-    property int currentPosition: 0
-    property int totalDuration: 0
+    // 绑定到 bridge 属性（通过 notify 信号自动刷新）
+    property string currentTitle: (typeof bridge !== "undefined") ? bridge.currentTitle : ""
+    property bool isPlaying: (typeof bridge !== "undefined") ? bridge.isPlaying : false
+    property int currentPosition: (typeof bridge !== "undefined") ? bridge.currentPosition : 0
+    property int totalDuration: (typeof bridge !== "undefined") ? bridge.totalDuration : 0
 
     Row {
         anchors.centerIn: parent

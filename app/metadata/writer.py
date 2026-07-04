@@ -10,6 +10,26 @@ from mutagen.id3 import (
 )
 
 
+def _get_image_mime(data: bytes) -> str:
+    """通过文件头魔术字节检测图片格式"""
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return "image/png"
+    if data[:2] == b'\xff\xd8':
+        return "image/jpeg"
+    if data[:4] == b'GIF8':
+        return "image/gif"
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return "image/webp"
+    return "image/jpeg"  # fallback
+
+
+def _get_mp4_cover_format(data: bytes) -> int:
+    """根据图片数据确定 MP4Cover 格式常量"""
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return MP4Cover.FORMAT_PNG
+    return MP4Cover.FORMAT_JPEG
+
+
 def write_tags(path: str, tags: dict):
     """
     将标签写入音频文件。
@@ -56,7 +76,7 @@ def _write_mp3_tags(audio: MP3, tags: dict):
             if k.startswith("APIC"):
                 del audio.tags[k]
         audio.tags.add(APIC(
-            encoding=3, mime="image/jpeg", type=3,
+            encoding=3, mime=_get_image_mime(cover), type=3,
             desc="Cover", data=cover
         ))
 
@@ -77,7 +97,7 @@ def _write_flac_tags(audio: FLAC, tags: dict):
         audio.clear_pictures()
         pic = Picture()
         pic.type = 3
-        pic.mime = "image/jpeg"
+        pic.mime = _get_image_mime(cover)
         pic.desc = "Cover"
         pic.data = cover
         audio.add_picture(pic)
@@ -96,7 +116,7 @@ def _write_mp4_tags(audio: MP4, tags: dict):
     # 封面
     cover = tags.get("cover_data")
     if cover:
-        mp4_cover = MP4Cover(cover, imageformat=MP4Cover.FORMAT_JPEG)
+        mp4_cover = MP4Cover(cover, imageformat=_get_mp4_cover_format(cover))
         audio["\xa9cov"] = [mp4_cover]
 
 

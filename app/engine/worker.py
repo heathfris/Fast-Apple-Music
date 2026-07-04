@@ -20,15 +20,18 @@ class TaskWorker(QThread):
         super().__init__(parent)
         self._queue = Queue()
         self._cancelled = False
+        self._pending_count = 0
         self._engine = ConversionEngine()
 
     def add_task(self, task: Task):
         """添加任务到队列"""
+        self._pending_count += 1
         self._queue.put(task)
 
     def add_tasks(self, tasks: list[Task]):
         """批量添加任务"""
         for t in tasks:
+            self._pending_count += 1
             self._queue.put(t)
 
     def cancel_all(self):
@@ -79,6 +82,7 @@ class TaskWorker(QThread):
             self.task_finished.emit(task.task_id, result)
         else:
             self.task_failed.emit(task.task_id, result.error_message)
+        self._decrement_pending()
 
     def _run_read_tags(self, task: Task):
         """执行标签读取任务"""
@@ -87,6 +91,7 @@ class TaskWorker(QThread):
         tags = read_tags(task.file_path)
         self.task_progress.emit(task.task_id, 100)
         self.task_finished.emit(task.task_id, tags)
+        self._decrement_pending()
 
     def _run_write_tags(self, task: Task):
         """执行标签写入任务"""
@@ -97,3 +102,10 @@ class TaskWorker(QThread):
         af = self._engine.analyze(task.file_path)
         af.status = AudioStatus.TAGGED
         self.task_finished.emit(task.task_id, af)
+        self._decrement_pending()
+
+    def _decrement_pending(self):
+        self._pending_count -= 1
+        if self._pending_count <= 0:
+            self._pending_count = 0
+            self.all_done.emit()

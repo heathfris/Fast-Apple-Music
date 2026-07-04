@@ -3,7 +3,6 @@ import sys
 import os
 import tempfile
 from PySide6.QtCore import QUrl, QObject, Slot, Signal, Property, QTimer
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QFileDialog, QApplication
 
@@ -172,7 +171,8 @@ class AppBridge(QObject):
     def _on_task_finished(self, task_id: str, result):
         if isinstance(result, AudioFile):
             for i, f in enumerate(self._files):
-                if f.path == result.path:
+                # 匹配原始路径或输出路径（标签写入任务的结果 path 是输出路径）
+                if f.path == result.path or f.output_path == result.path:
                     self._files[i] = result
                     break
             self.filesChanged.emit()
@@ -186,21 +186,21 @@ class AppBridge(QObject):
     def _sync_player(self):
         self.playerStateChanged.emit()
 
-    # --- QML 属性 ---
+    # --- QML 属性 (with notify signals so QML bindings re-evaluate) ---
 
-    @Property(float)
+    @Property(float, notify=playerStateChanged)
     def currentPosition(self) -> float:
         return float(self._player.position())
 
-    @Property(float)
+    @Property(float, notify=playerStateChanged)
     def totalDuration(self) -> float:
         return float(self._player.duration())
 
-    @Property(bool)
+    @Property(bool, notify=playerStateChanged)
     def isPlaying(self) -> bool:
         return self._player.isPlaying()
 
-    @Property(str)
+    @Property(str, notify=playerStateChanged)
     def currentTitle(self) -> str:
         if 0 <= self._selected_index < len(self._files):
             return self._files[self._selected_index].filename
