@@ -4,7 +4,9 @@ import QtQuick.Controls
 Rectangle {
     id: sidebar
 
-    property int currentIndex: 0
+    signal pageChanged(int page)
+
+    property int currentPage: 0
 
     width: 180
     color: Qt.rgba(44/255, 44/255, 46/255, 0.85)
@@ -15,61 +17,48 @@ Rectangle {
         spacing: 4
 
         NavButton {
-            text: "📁  导入"
-            isActive: sidebar.currentIndex === 0
-            onClicked: sidebar.currentIndex = 0
+            text: "📂  输出目录"
+            isActive: sidebar.currentPage === 1
+            onClicked: { sidebar.currentPage = 1; sidebar.pageChanged(1) }
         }
         NavButton {
-            text: "🔊  试听"
-            isActive: sidebar.currentIndex === 1
-            onClicked: sidebar.currentIndex = 1
-        }
-        NavButton {
-            text: "🏷️  标签"
-            isActive: sidebar.currentIndex === 2
-            onClicked: sidebar.currentIndex = 2
+            text: "📋  历史记录"
+            isActive: sidebar.currentPage === 2
+            onClicked: { sidebar.currentPage = 2; sidebar.pageChanged(2) }
         }
 
         Rectangle {
-            width: parent.width - 20
-            height: 1
+            width: parent.width - 20; height: 1
             color: Qt.rgba(1, 1, 1, 0.1)
             anchors.horizontalCenter: parent.horizontalCenter
         }
 
+        // 返回文件列表
         NavButton {
-            text: "⚙️  设置"
-            isActive: sidebar.currentIndex === 3
-            onClicked: sidebar.currentIndex = 3
+            text: "📁  文件列表"
+            isActive: sidebar.currentPage === 0
+            onClicked: { sidebar.currentPage = 0; sidebar.pageChanged(0) }
         }
     }
 
-    // 底部版本信息
     Text {
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 20
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 20
         anchors.horizontalCenter: parent.horizontalCenter
-        text: "v1.0.0"
-        color: "#555555"
-        font.pixelSize: 11
+        text: "v1.0.0"; color: "#555555"; font.pixelSize: 11
     }
 
     component NavButton: Rectangle {
         property string text: ""
         property bool isActive: false
-
         signal clicked()
 
-        width: sidebar.width - 16
-        height: 36
-        radius: 8
-        color: isActive ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+        width: sidebar.width - 16; height: 36; radius: 8
+        color: isActive ? Qt.rgba(1,1,1,0.08) : "transparent"
         anchors.horizontalCenter: parent.horizontalCenter
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.leftMargin: 12
+            anchors.left: parent.left; anchors.leftMargin: 12
             text: parent.text
             color: parent.isActive ? "#FFFFFF" : "#98989D"
             font.pixelSize: 13
@@ -77,7 +66,7 @@ Rectangle {
         }
 
         MouseArea {
-            anchors.fill: parent
+            anchors.fill: parent; hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: parent.clicked()
         }

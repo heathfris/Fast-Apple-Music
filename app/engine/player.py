@@ -72,6 +72,7 @@ class PlayerController(QObject):
     @Slot()
     def stop(self):
         self._player.stop()
+        self._player.setSource(QUrl())  # 释放文件句柄
         self._is_playing = False
         self.playingChanged.emit()
 
