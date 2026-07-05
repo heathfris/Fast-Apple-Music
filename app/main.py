@@ -31,6 +31,24 @@ from app.models.task import Task, TaskType
 from app.metadata.reader import read_tags
 from app.metadata.writer import write_tags, write_lyrics as _mutagen_write_lyrics
 
+# Apple Music 流派列表（从项目规格文档提取）
+GENRES = [
+    "不可归类音乐", "电影配乐", "电子乐", "儿童音乐", "工业乐", "古典",
+    "浩室", "节日乐", "爵士乐", "蓝调音乐/R&B", "另类", "流行乐",
+    "迷幻乐", "民谣", "轻音乐", "世界乐", "说唱", "铁克诺", "舞曲",
+    "嘻哈/说唱", "乡村音乐", "新生代音乐", "摇滚", "宗教乐",
+    "Alternative", "Anime", "C-Pop", "Cantopop/HK-Pop", "Children's Music",
+    "Chinese", "Chinese Hip-Hop", "Chinese Regional Folk", "Chinese Rock",
+    "Christian", "Classical", "Contemporary Country", "Contemporary R&B",
+    "Country", "Dance", "Easy Listening", "Electronic", "EMO", "Folk",
+    "French Pop", "Gospel", "Hard Rock", "Hip-Hop", "Hip-Hop/Rap",
+    "Holiday", "House", "Indie Pop", "Indie Rock", "Instrumental",
+    "J-Pop", "Japan", "K-Pop", "Korean Hip-Hop", "Mandopop", "Musicals",
+    "New Age", "Original Score", "Pop", "Pop/Rock", "Punk", "R&B/Soul",
+    "Rap", "Relaxation", "Roc", "Soundtrack", "TV Soundtrack", "Video Game",
+    "Vocal", "Worldwide",
+]
+
 
 def _fix_frameless_window(hwnd_ptr):
     """Win32 API: restore taskbar minimize/restore for frameless window"""
@@ -87,6 +105,9 @@ class AppBridge(QObject):
     filesChanged = Signal()
     playerStateChanged = Signal()
     tagsLoaded = Signal("QVariantMap")
+    multiTagsLoaded = Signal("QVariantMap")
+    tagsSaved = Signal(int)    # 保存成功的文件数
+    saveError = Signal(str)    # 保存失败的错误信息
     lyricsLoaded = Signal(str)
 
     def __init__(self, parent=None):
@@ -98,6 +119,7 @@ class AppBridge(QObject):
         self._lyrics_output_dir = tempfile.gettempdir()
         self._last_tags: dict = {}
         self._conversion_history: list[dict] = []
+        self._pending_tag_indices: list = []  # 当前正在加载标签的索引列表
 
         self._player = PlayerController()
 
@@ -203,69 +225,202 @@ class AppBridge(QObject):
 
     @Slot(int)
     def select_file(self, index: int):
+        """双击选中文件 — 同步加载标签+歌词，更新播放栏标题"""
         if 0 <= index < len(self._files):
             self._selected_index = index
             self.playerStateChanged.emit()
             af = self._files[index]
             target = af.output_path if af.output_path else af.path
-            # 读取标签（歌词随 tags 一起返回，不再同步阻塞）
-            task = Task(
-                task_id="", task_type=TaskType.READ_TAGS,
-                file_path=target, kwargs={},
-            )
-            self._worker.add_task(task)
+            try:
+                tags = read_tags(target)
+                tags["lyrics"] = _read_lyrics(target)
+                tags["_indices"] = [index]
+                tags["_count"] = 1
+                self._pending_tag_indices = [index]
+                self._last_tags = tags
+                self.tagsLoaded.emit(tags)
+                self.lyricsLoaded.emit(tags["lyrics"])
+            except Exception:
+                pass
 
     # --- 元数据 ---
 
+    @Slot(result="QVariantList")
+    def get_genres(self) -> list:
+        """返回 Apple Music 流派列表"""
+        return GENRES
+
+    @Slot("QVariantList")
+    def load_selected_tags(self, indices: list):
+        """加载选中文件的标签和歌词。单选直接读，多选合并后发 multiTagsLoaded。"""
+        if not indices:
+            self._pending_tag_indices = []
+            self._selected_index = -1
+            self.tagsLoaded.emit({})
+            self.lyricsLoaded.emit("")
+            return
+
+        self._pending_tag_indices = list(indices)
+        self._selected_index = indices[0]
+
+        # --- 单选：同步读取标签+歌词 ---
+        if len(indices) == 1:
+            idx = indices[0]
+            if 0 <= idx < len(self._files):
+                af = self._files[idx]
+                target = af.output_path if af.output_path else af.path
+                try:
+                    tags = read_tags(target)
+                    lyrics = _read_lyrics(target)
+                    tags["lyrics"] = lyrics
+                    tags["_indices"] = [idx]
+                    tags["_count"] = 1
+                    self._last_tags = tags
+                    self.tagsLoaded.emit(tags)
+                    self.lyricsLoaded.emit(lyrics)
+                except Exception:
+                    pass
+            return
+
+        # --- 多选：逐文件读取标签+歌词，合并比较 ---
+        all_tags = []
+        all_lyrics = []
+        for idx in indices:
+            if 0 <= idx < len(self._files):
+                af = self._files[idx]
+                target = af.output_path if af.output_path else af.path
+                try:
+                    t = read_tags(target)
+                    t["_file_idx"] = idx
+                    all_tags.append(t)
+                    all_lyrics.append(_read_lyrics(target))
+                except Exception:
+                    all_lyrics.append("")
+
+        if not all_tags:
+            return
+
+        # 合并标签字段
+        merged = {}
+        keys = ["title", "artist", "album", "album_artist", "composer", "year", "genre"]
+        for key in keys:
+            values = set()
+            for t in all_tags:
+                v = t.get(key, "") or ""
+                values.add(v)
+            if len(values) == 1:
+                merged[key] = values.pop()
+            else:
+                merged[key] = ""
+                merged[f"{key}_differ"] = True
+
+        # 合并歌词
+        lyrics_set = set(all_lyrics)
+        if len(lyrics_set) == 1:
+            merged_lyrics = lyrics_set.pop()
+            merged["lyrics"] = merged_lyrics
+            self.lyricsLoaded.emit(merged_lyrics)
+        else:
+            merged["lyrics"] = ""
+            merged["lyrics_differ"] = True
+            self.lyricsLoaded.emit("")
+
+        merged["_indices"] = list(indices)
+        merged["_count"] = len(indices)
+        merged["cover_data"] = None
+        self._last_tags = merged
+        self.multiTagsLoaded.emit(merged)
+
     @Slot("QVariantMap")
     def save_tags(self, tags: dict):
-        if self._selected_index < 0 or self._selected_index >= len(self._files):
-            return
-        af = self._files[self._selected_index]
-        target = af.output_path if af.output_path else af.path
+        """保存标签 — 支持单选和多选，完成后发 tagsSaved/saveError 信号"""
+        indices = list(tags.get("_indices", []))
+        if not indices:
+            if self._selected_index >= 0:
+                indices = [self._selected_index]
+            else:
+                self.saveError.emit("未选中任何文件")
+                return
+
         cover_path = tags.get("cover_path", "")
         cover_data = None
         if cover_path and os.path.isfile(cover_path):
             with open(cover_path, "rb") as f:
                 cover_data = f.read()
+
         clean_tags = {k: v for k, v in tags.items()
-                      if not k.startswith("_") and k != "cover_path"}
+                      if not k.startswith("_") and not k.endswith("_differ")
+                      and k != "cover_path" and k != "_indices" and k != "_count"}
         if cover_data:
             clean_tags["cover_data"] = cover_data
-        task = Task(
-            task_id="", task_type=TaskType.WRITE_TAGS,
-            file_path=target, kwargs={"tags": clean_tags},
-        )
-        self._worker.add_task(task)
+
+        saved_count = 0
+        errors = []
+
+        # 保存前停止播放，释放文件句柄（避免 Windows 文件锁定）
+        self._player.stop()
+
+        for idx in indices:
+            if idx < 0 or idx >= len(self._files):
+                errors.append(f"索引 {idx} 超出范围")
+                continue
+            af = self._files[idx]
+            target = af.output_path if af.output_path else af.path
+            if not os.path.exists(target):
+                errors.append(f"文件不存在: {target}")
+                continue
+            try:
+                write_tags(target, clean_tags.copy())
+                af.status = AudioStatus.TAGGED
+                saved_count += 1
+            except Exception as e:
+                errors.append(f"{af.filename}: {e}")
+
+        if errors and saved_count == 0:
+            self.saveError.emit("; ".join(errors[:3]))
+        elif saved_count > 0:
+            self.filesChanged.emit()
+
+        self.tagsSaved.emit(saved_count)
 
     # --- 歌词 ---
 
-    @Slot(int, result=str)
-    def get_lyrics(self, index: int) -> str:
-        if 0 <= index < len(self._files):
-            af = self._files[index]
-            target = af.output_path if af.output_path else af.path
-            return _read_lyrics(target)
-        return ""
+    @Slot("QVariantList", str)
+    def save_lyrics(self, indices: list, lyrics: str):
+        """将歌词嵌入到选中的所有音频文件中"""
+        for idx in indices:
+            if 0 <= idx < len(self._files):
+                af = self._files[idx]
+                target = af.output_path if af.output_path else af.path
+                try:
+                    _write_lyrics(target, lyrics)
+                except Exception:
+                    pass
 
-    @Slot(int, str)
-    def save_lyrics(self, index: int, lyrics: str):
-        if 0 <= index < len(self._files):
-            af = self._files[index]
-            target = af.output_path if af.output_path else af.path
-            _write_lyrics(target, lyrics)
-
-    @Slot(int, str, result=str)
-    def export_lyrics(self, index: int, lyrics: str) -> str:
-        """导出歌词为 .lrc 文件，返回文件路径"""
-        if 0 <= index < len(self._files):
-            af = self._files[index]
+    @Slot("QVariantList", str, result=str)
+    def export_lyrics(self, indices: list, lyrics: str) -> str:
+        """导出歌词为 .lrc 文件，返回第一个文件的导出路径"""
+        if not indices:
+            return ""
+        idx = indices[0]
+        if 0 <= idx < len(self._files):
+            af = self._files[idx]
             basename = os.path.splitext(af.filename)[0]
             lrc_path = os.path.join(self._lyrics_output_dir, f"{basename}.lrc")
             with open(lrc_path, "w", encoding="utf-8") as f:
                 f.write(lyrics)
             return lrc_path
         return ""
+
+    # --- 音量 ---
+
+    @Slot(float)
+    def set_volume(self, vol: float):
+        self._player.set_volume(vol)
+
+    @Slot(result=float)
+    def get_volume(self) -> float:
+        return self._player.volume()
 
     # --- 设置 ---
 
@@ -337,6 +492,10 @@ class AppBridge(QObject):
             self.filesChanged.emit()
         elif isinstance(result, dict) and "title" in result:
             self._last_tags = result
+            # 附加上下文信息：当前编辑的文件索引
+            if self._pending_tag_indices:
+                result["_indices"] = list(self._pending_tag_indices)
+                result["_count"] = len(self._pending_tag_indices)
             self.tagsLoaded.emit(result)
             if "lyrics" in result:
                 self.lyricsLoaded.emit(result.get("lyrics", ""))

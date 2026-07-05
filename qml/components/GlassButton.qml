@@ -10,6 +10,8 @@ Button {
 
     text: btnIcon ? (btnIcon + " " + btnText) : btnText
 
+    focusPolicy: Qt.NoFocus
+
     contentItem: Text {
         text: root.text
         font.family: Qt.platform.os === "osx" ? "SF Pro Display" : "Segoe UI"

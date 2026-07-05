@@ -33,13 +33,13 @@ class AudioFile:
     def status_icon(self) -> str:
         """返回状态图标文本，QML 侧根据此值渲染"""
         icons = {
-            AudioStatus.PENDING:    "○",
-            AudioStatus.PROCESSING: "◌",
-            AudioStatus.DONE:       "✅",
-            AudioStatus.FAILED:     "⚠️",
-            AudioStatus.TAGGED:     "🏷️",
+            AudioStatus.PENDING:    "●",
+            AudioStatus.PROCESSING: "●",
+            AudioStatus.DONE:       "●",
+            AudioStatus.FAILED:     "●",
+            AudioStatus.TAGGED:     "●",
         }
-        return icons.get(self.status, "○")
+        return icons.get(self.status, "●")
 
     def status_color(self) -> str:
         """返回状态对应颜色"""

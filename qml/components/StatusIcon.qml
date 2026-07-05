@@ -13,16 +13,19 @@ Rectangle {
     color: "transparent"
 
     Text {
+        id: iconText
         anchors.centerIn: parent
-        text: root.spinning ? "◌" : root.iconText
+        text: root.iconText
         color: root.iconColor
         font.pixelSize: 16
+        opacity: root.spinning ? 0.35 : 1.0
 
-        RotationAnimation on rotation {
+        // 处理中：脉冲呼吸动画（实心圆旋转不可见，改用透明度脉冲）
+        SequentialAnimation on opacity {
             running: root.spinning
-            from: 0; to: 360
-            duration: 1000
             loops: Animation.Infinite
+            NumberAnimation { from: 0.35; to: 1.0; duration: 600 }
+            NumberAnimation { from: 1.0; to: 0.35; duration: 600 }
         }
     }
 }

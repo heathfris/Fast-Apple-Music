@@ -24,6 +24,10 @@ Rectangle {
                 }
             }
             fileList.selectedIndices = valid;
+            // 刷新右侧元数据（删除后自动更新或清空）
+            if (typeof bridge !== "undefined") {
+                bridge.load_selected_tags(fileList.selectedIndices);
+            }
         }
     }
 
@@ -109,6 +113,9 @@ Rectangle {
                                 indices.push(i);
                             }
                             fileList.selectedIndices = indices;
+                        }
+                        if (typeof bridge !== "undefined") {
+                            bridge.load_selected_tags(fileList.selectedIndices);
                         }
                     }
                 }
@@ -267,18 +274,27 @@ Rectangle {
                 }
 
                 // 主点击区域 — 不覆盖删除按钮
+                // 单击：单选；Ctrl+单击：多选；双击：播放
                 MouseArea {
                     anchors.fill: parent
                     anchors.rightMargin: 44
                     acceptedButtons: Qt.LeftButton
                     onClicked: function(mouse) {
-                        fileList.toggleSelection(index);
+                        if (mouse.modifiers & Qt.ControlModifier) {
+                            // Ctrl+单击：追加/取消选择
+                            fileList.toggleSelection(index);
+                        } else {
+                            // 普通单击：单选
+                            fileList.selectedIndices = [index];
+                        }
+                        // 加载选中文件的标签到右侧面板
                         if (typeof bridge !== "undefined") {
-                            bridge.select_file(index);
+                            bridge.load_selected_tags(fileList.selectedIndices);
                         }
                     }
                     onDoubleClicked: {
                         if (typeof bridge !== "undefined") {
+                            bridge.select_file(index);
                             bridge.play_file(index);
                         }
                     }
@@ -296,5 +312,31 @@ Rectangle {
         horizontalAlignment: Text.AlignHCenter
         font.family: Qt.platform.os === "osx" ? "SF Pro Display" : "Segoe UI"
         visible: fileList.files.length === 0
+    }
+
+    // 操作提示 — 文件列表底部，3 秒后渐隐
+    Text {
+        id: hintText
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 10
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "单击选择并查看元数据，双击播放"
+        color: "#444444"
+        font.pixelSize: 12
+        font.family: Qt.platform.os === "osx" ? "SF Pro Display" : "Segoe UI"
+        opacity: 1.0
+        visible: fileList.files.length > 0
+
+        Behavior on opacity {
+            NumberAnimation { duration: 800; easing.type: Easing.OutCubic }
+        }
+
+        Timer {
+            id: hintTimer
+            interval: 3000
+            running: fileList.files.length > 0
+            repeat: false
+            onTriggered: hintText.opacity = 0
+        }
     }
 }

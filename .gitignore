@@ -12,3 +12,14 @@ build/
 *.swp
 *.swo
 .DS_Store
+
+# 开发工具配置（不部署）
+.claude/
+
+# 调研文档（不部署）
+docs/
+*调研报告*
+
+# 测试输出
+output.*.lrc
+verify_lyrics.txt

@@ -8,7 +8,7 @@ Rectangle {
 
     property int currentPage: 0
 
-    width: 180
+    width: 140
     color: Qt.rgba(44/255, 44/255, 46/255, 0.85)
 
     Column {
@@ -16,15 +16,11 @@ Rectangle {
         anchors.topMargin: 60
         spacing: 4
 
+        // 文件列表 — 默认首页，放在最上面
         NavButton {
-            text: "📂  输出目录"
-            isActive: sidebar.currentPage === 1
-            onClicked: { sidebar.currentPage = 1; sidebar.pageChanged(1) }
-        }
-        NavButton {
-            text: "📋  历史记录"
-            isActive: sidebar.currentPage === 2
-            onClicked: { sidebar.currentPage = 2; sidebar.pageChanged(2) }
+            text: "文件列表"
+            isActive: sidebar.currentPage === 0
+            onClicked: { sidebar.currentPage = 0; sidebar.pageChanged(0) }
         }
 
         Rectangle {
@@ -33,11 +29,15 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
         }
 
-        // 返回文件列表
         NavButton {
-            text: "📁  文件列表"
-            isActive: sidebar.currentPage === 0
-            onClicked: { sidebar.currentPage = 0; sidebar.pageChanged(0) }
+            text: "输出目录"
+            isActive: sidebar.currentPage === 1
+            onClicked: { sidebar.currentPage = 1; sidebar.pageChanged(1) }
+        }
+        NavButton {
+            text: "历史记录"
+            isActive: sidebar.currentPage === 2
+            onClicked: { sidebar.currentPage = 2; sidebar.pageChanged(2) }
         }
     }
 
@@ -57,8 +57,7 @@ Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
 
         Text {
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left; anchors.leftMargin: 12
+            anchors.centerIn: parent
             text: parent.text
             color: parent.isActive ? "#FFFFFF" : "#98989D"
             font.pixelSize: 13

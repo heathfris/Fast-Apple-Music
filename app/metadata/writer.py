@@ -1,12 +1,14 @@
 """音频标签写入 — 基于 mutagen"""
 import os
+import tempfile
+import shutil
 from mutagen import File as MutagenFile
 from mutagen.flac import FLAC, Picture
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.id3 import (
     ID3, TIT2, TPE1, TALB, TPE2, TCOM,
-    TDRC, TCON, APIC, USLT
+    TDRC, TCON, APIC, USLT, delete
 )
 
 
@@ -31,10 +33,7 @@ def _get_mp4_cover_format(data: bytes) -> int:
 
 
 def write_tags(path: str, tags: dict):
-    """
-    将标签写入音频文件。
-    tags 字典格式: {"title": "...", "artist": "...", ...}
-    """
+    """将标签写入音频文件。对 MP3 使用健壮写入策略避免 'cant sync to MPEG frame'。"""
     if not os.path.exists(path):
         raise FileNotFoundError(f"文件不存在: {path}")
 
@@ -43,13 +42,96 @@ def write_tags(path: str, tags: dict):
         raise ValueError(f"不支持的文件格式: {path}")
 
     if isinstance(audio, MP3):
-        _write_mp3_tags(audio, tags)
+        _write_mp3_robust(path, audio, tags)
     elif isinstance(audio, FLAC):
         _write_flac_tags(audio, tags)
+        audio.save()
     elif isinstance(audio, MP4):
         _write_mp4_tags(audio, tags)
+        audio.save()
 
-    audio.save()
+
+def _write_mp3_robust(path: str, audio: MP3, tags: dict):
+    """
+    健壮的 MP3 标签写入。
+    策略：先删旧标签 → 建新标签 → 尝试正常保存。
+    如果失败（MPEG sync error），则删除标签后用 ID3 直接操作文件。
+    """
+    # 策略 1：删除旧标签，建新标签，正常保存
+    try:
+        audio.delete()
+        audio.tags = ID3()
+        _write_mp3_tags(audio, tags)
+        audio.save(v2_version=3)
+        return
+    except Exception:
+        pass
+
+    # 策略 2：用 ID3 直接操作（绕过 mutagen 的 MP3 wrapper 的 MPEG 同步问题）
+    try:
+        # 先删除已有的 ID3 标签（包括 v1 和 v2）
+        delete(path, delete_v1=True, delete_v2=True)
+        # 创建全新的 ID3v2.3 标签
+        id3 = ID3()
+        _set_id3(id3, TIT2, "title", tags)
+        _set_id3(id3, TPE1, "artist", tags)
+        _set_id3(id3, TALB, "album", tags)
+        _set_id3(id3, TPE2, "album_artist", tags)
+        _set_id3(id3, TCOM, "composer", tags)
+        _set_id3(id3, TCON, "genre", tags)
+
+        year = tags.get("year", "")
+        if year:
+            id3.add(TDRC(encoding=3, text=str(year)))
+
+        cover = tags.get("cover_data")
+        if cover:
+            id3.add(APIC(
+                encoding=3, mime=_get_image_mime(cover), type=3,
+                desc="Cover", data=cover
+            ))
+
+        # 保存 ID3 标签，用 v2_version=3 确保兼容 Apple Music
+        id3.save(path, v2_version=3)
+        return
+    except Exception:
+        pass
+
+    # 策略 3：终极兜底 — 用 FFmpeg 重写标签
+    _write_via_ffmpeg(path, tags)
+
+
+def _write_via_ffmpeg(path: str, tags: dict):
+    """
+    用 FFmpeg 重写标签 — 最兼容的方式。
+    但会重新编码音频，仅作为最后兜底。
+    """
+    import subprocess
+    import tempfile
+
+    # 构建元数据参数
+    meta_args = []
+    mapping = {
+        "title": "title", "artist": "artist", "album": "album",
+        "album_artist": "album_artist", "composer": "composer",
+        "year": "date", "genre": "genre",
+    }
+    for dict_key, ff_key in mapping.items():
+        val = tags.get(dict_key, "")
+        if val:
+            meta_args.extend(["-metadata", f"{ff_key}={val}"])
+
+    if not meta_args:
+        return  # 没有要写入的标签
+
+    # 写到临时文件然后替换
+    tmp_path = path + ".tmp.mp3"
+    cmd = ["ffmpeg", "-y", "-i", path, "-acodec", "copy"] + meta_args + [tmp_path]
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode == 0 and os.path.exists(tmp_path):
+        shutil.move(tmp_path, path)
+    else:
+        raise RuntimeError(f"FFmpeg 写入失败: {result.stderr.decode('utf-8', errors='replace')[:200]}")
 
 
 def _write_mp3_tags(audio: MP3, tags: dict):

@@ -11,8 +11,8 @@ class PlayerController(QObject):
     # 信号
     playingChanged = Signal()
     currentFileChanged = Signal()
-    positionChanged = Signal()
-    durationChanged = Signal()
+    positionChanged = Signal(int)   # 播放位置变化（毫秒）
+    durationChanged = Signal(int)   # 音频时长变化（毫秒）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,6 +79,9 @@ class PlayerController(QObject):
         self._player.setSource(QUrl())  # 释放文件句柄
         self._is_playing = False
         self.playingChanged.emit()
+
+    def volume(self) -> float:
+        return self._audio_output.volume()
 
     @Slot(float)
     def set_volume(self, vol: float):

@@ -13,6 +13,18 @@ Window {
 
     property int currentPage: 0
 
+    // 全局键盘焦点 — 空格键播放/暂停，不受按钮焦点干扰
+    Item {
+        anchors.fill: parent
+        focus: true
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                if (typeof bridge !== "undefined") bridge.toggle_play();
+                event.accepted = true;
+            }
+        }
+    }
+
     // 自定义标题栏
     Rectangle {
         id: titleBar
@@ -29,7 +41,7 @@ Window {
         }
 
         Text {
-            anchors.right: parent.right; anchors.rightMargin: 80
+            anchors.left: parent.left; anchors.leftMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             text: "Fast Apple Music"; color: "#FFFFFF"
             font.pixelSize: 13; font.bold: true
