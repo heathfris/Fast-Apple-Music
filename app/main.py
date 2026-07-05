@@ -30,7 +30,8 @@ from app.engine.player import PlayerController
 from app.models.audiofile import AudioFile, AudioStatus
 from app.models.task import Task, TaskType
 from app.metadata.reader import read_tags
-from app.metadata.writer import write_tags, write_lyrics as _mutagen_write_lyrics
+from app.metadata.writer import write_tags
+from app.utils.ffmpeg_utils import check_ffmpeg_available
 
 # Apple Music 流派列表（从项目规格文档提取）
 GENRES = [
@@ -109,9 +110,10 @@ def _read_lyrics(path: str) -> str:
 
 
 def _write_lyrics(path: str, lyrics: str):
-    """将歌词写入音频文件 — 单次打开，不重复读取"""
+    """将歌词写入音频文件"""
     try:
-        _mutagen_write_lyrics(path, lyrics)
+        from app.metadata.writer import write_lyrics as _w
+        _w(path, lyrics)
     except Exception:
         pass
 
@@ -136,7 +138,8 @@ class AppBridge(QObject):
         self._lyrics_output_dir = tempfile.gettempdir()
         self._last_tags: dict = {}
         self._conversion_history: list[dict] = []
-        self._pending_tag_indices: list = []  # 当前正在加载标签的索引列表
+        self._pending_tag_indices: list = []
+        self._cover_cache: dict = {}  # {file_path: bytes} — 封面字节不能经 QML 往返，Python 侧缓存
 
         self._player = PlayerController()
 
@@ -250,6 +253,10 @@ class AppBridge(QObject):
             target = af.output_path if af.output_path else af.path
             try:
                 tags = read_tags(target)
+                # 缓存封面（不能经 QML 往返）
+                if tags.get("cover_data"):
+                    self._cover_cache[target] = tags["cover_data"]
+                tags["cover_data"] = None
                 tags["lyrics"] = _read_lyrics(target)
                 tags["_indices"] = [index]
                 tags["_count"] = 1
@@ -289,6 +296,10 @@ class AppBridge(QObject):
                 try:
                     tags = read_tags(target)
                     lyrics = _read_lyrics(target)
+                    # 封面数据不能经 QML 往返（bytes→QVariant 会丢失），在 Python 侧缓存
+                    if tags.get("cover_data"):
+                        self._cover_cache[target] = tags["cover_data"]
+                    tags["cover_data"] = None  # 不发给 QML
                     tags["lyrics"] = lyrics
                     tags["_indices"] = [idx]
                     tags["_count"] = 1
@@ -367,7 +378,8 @@ class AppBridge(QObject):
 
         clean_tags = {k: v for k, v in tags.items()
                       if not k.startswith("_") and not k.endswith("_differ")
-                      and k != "cover_path" and k != "_indices" and k != "_count"}
+                      and k != "cover_path" and k != "_indices" and k != "_count"
+                      and k != "cover_data"}  # cover_data 也过滤掉（来自 QML 无效）
         if cover_data:
             clean_tags["cover_data"] = cover_data
 
@@ -387,7 +399,11 @@ class AppBridge(QObject):
                 errors.append(f"文件不存在: {target}")
                 continue
             try:
-                write_tags(target, clean_tags.copy())
+                file_tags = clean_tags.copy()
+                # 如果没有新封面，从缓存恢复原始封面（封面字节不能经 QML 往返）
+                if "cover_data" not in file_tags and target in self._cover_cache:
+                    file_tags["cover_data"] = self._cover_cache[target]
+                write_tags(target, file_tags)
                 af.status = AudioStatus.TAGGED
                 saved_count += 1
             except Exception as e:
@@ -562,6 +578,17 @@ def main():
     app = QApplication(sys.argv)
     app.setOrganizationName("FastAppleMusic")
     app.setApplicationName("Fast Apple Music")
+
+    # 启动检查：FFmpeg 必须可用
+    if not check_ffmpeg_available():
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None, "缺少依赖",
+            "FFmpeg 未安装或不在系统 PATH 中。\n\n"
+            "Fast Apple Music 依赖 FFmpeg 进行音频处理。\n"
+            "请安装 FFmpeg 并将其添加到 PATH 环境变量后重试。"
+        )
+        sys.exit(1)
 
     icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "图标1.png")
     if os.path.exists(icon_path):

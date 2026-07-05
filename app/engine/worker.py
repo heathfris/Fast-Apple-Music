@@ -1,58 +1,56 @@
 """异步任务队列 — 基于 QThread，批量处理不阻塞 UI"""
 from PySide6.QtCore import QThread, Signal
-from queue import Queue, Empty
+from queue import Queue
 from app.models.task import Task, TaskType
 from app.models.audiofile import AudioFile, AudioStatus
 from app.engine.converter import ConversionEngine
 
 
 class TaskWorker(QThread):
-    """后台任务处理线程"""
+    """后台任务处理线程 — 使用阻塞队列 + 哨兵值取消，避免忙轮询"""
 
     # 信号
     task_started = Signal(str)          # task_id
     task_progress = Signal(str, int)    # task_id, percent (0-100)
     task_finished = Signal(str, object) # task_id, AudioFile (转换后) 或 tags dict
     task_failed = Signal(str, str)      # task_id, error_message
-    all_done = Signal()                 # 全部任务完成
+    all_done = Signal()                 # 全部任务处理完毕（取消时触发）
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._queue = Queue()
         self._cancelled = False
-        self._pending_count = 0
         self._engine = ConversionEngine()
 
     def add_task(self, task: Task):
         """添加任务到队列"""
-        self._pending_count += 1
         self._queue.put(task)
 
     def add_tasks(self, tasks: list[Task]):
         """批量添加任务"""
         for t in tasks:
-            self._pending_count += 1
             self._queue.put(t)
 
     def cancel_all(self):
-        """取消所有待处理任务"""
+        """取消所有待处理任务 — 向队列发送哨兵唤醒阻塞线程"""
         self._cancelled = True
-        # 清空队列
+        # 清空队列中未处理的任务
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
-            except Empty:
+            except Exception:
                 break
+        # 发送哨兵值唤醒阻塞的 get()
+        self._queue.put(None)
 
     def run(self):
-        """线程主循环 — 逐个处理队列中的任务"""
+        """线程主循环 — 阻塞等待任务，直到收到取消哨兵"""
         self._cancelled = False
 
-        while not self._cancelled:
-            try:
-                task = self._queue.get(timeout=0.5)
-            except Empty:
-                continue
+        while True:
+            task = self._queue.get()  # 阻塞等待，不浪费 CPU
+            if task is None or self._cancelled:
+                break
 
             self.task_started.emit(task.task_id)
 
@@ -83,7 +81,6 @@ class TaskWorker(QThread):
             self.task_finished.emit(task.task_id, result)
         else:
             self.task_failed.emit(task.task_id, result.error_message)
-        self._decrement_pending()
 
     def _run_read_tags(self, task: Task):
         """执行标签读取任务"""
@@ -92,7 +89,6 @@ class TaskWorker(QThread):
         tags = read_tags(task.file_path)
         self.task_progress.emit(task.task_id, 100)
         self.task_finished.emit(task.task_id, tags)
-        self._decrement_pending()
 
     def _run_write_tags(self, task: Task):
         """执行标签写入任务"""
@@ -103,10 +99,3 @@ class TaskWorker(QThread):
         af = self._engine.analyze(task.file_path)
         af.status = AudioStatus.TAGGED
         self.task_finished.emit(task.task_id, af)
-        self._decrement_pending()
-
-    def _decrement_pending(self):
-        self._pending_count -= 1
-        if self._pending_count <= 0:
-            self._pending_count = 0
-            self.all_done.emit()

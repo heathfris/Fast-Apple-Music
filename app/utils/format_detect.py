@@ -2,7 +2,6 @@
 import subprocess
 import json
 import os
-from typing import Optional
 from app.models.audiofile import AudioFile, AudioStatus
 
 

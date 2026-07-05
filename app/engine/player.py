@@ -2,7 +2,6 @@
 from PySide6.QtCore import QObject, Signal, Property, Slot
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtCore import QUrl
-from app.models.audiofile import AudioFile
 
 
 class PlayerController(QObject):
@@ -10,7 +9,6 @@ class PlayerController(QObject):
 
     # 信号
     playingChanged = Signal()
-    currentFileChanged = Signal()
     positionChanged = Signal(int)   # 播放位置变化（毫秒）
     durationChanged = Signal(int)   # 音频时长变化（毫秒）
 
@@ -21,9 +19,7 @@ class PlayerController(QObject):
         self._player.setAudioOutput(self._audio_output)
         self._audio_output.setVolume(0.8)
 
-        self._current_file: AudioFile | None = None
         self._is_playing = False
-        self._files = []  # 播放列表
 
         # 连接播放器原生信号
         self._player.playbackStateChanged.connect(self._on_state_changed)
@@ -39,13 +35,7 @@ class PlayerController(QObject):
     def isPlaying(self) -> bool:
         return self._is_playing
 
-    def currentFile(self) -> dict:
-        if self._current_file:
-            return self._current_file.to_dict()
-        return {}
-
     playing = Property(bool, isPlaying, notify=playingChanged)
-    currentFile = Property(dict, currentFile, notify=currentFileChanged)
 
     # --- 槽 ---
 
@@ -92,6 +82,3 @@ class PlayerController(QObject):
 
     def duration(self) -> int:
         return self._player.duration()
-
-    position_prop = Property(int, position, notify=playingChanged)
-    duration_prop = Property(int, duration, notify=playingChanged)

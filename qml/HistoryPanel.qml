@@ -6,6 +6,16 @@ Rectangle {
     id: panel
     color: "#1A1A1A"
 
+    function refreshHistory() {
+        historyText.text = (typeof bridge !== "undefined")
+            ? bridge.get_history() : "";
+    }
+
+    Connections {
+        target: bridge
+        function onFilesChanged() { refreshHistory() }
+    }
+
     Column {
         anchors.fill: parent
         anchors.margins: 32
@@ -25,10 +35,7 @@ Rectangle {
             GlassButton {
                 btnText: "刷新"
                 accentColor: "#3A3A3C"
-                onClicked: {
-                    historyText.text = (typeof bridge !== "undefined")
-                        ? bridge.get_history() : "";
-                }
+                onClicked: refreshHistory()
             }
         }
 

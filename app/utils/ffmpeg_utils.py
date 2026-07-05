@@ -82,7 +82,10 @@ def run_ffmpeg(cmd: list[str], timeout: int = 300) -> tuple[bool, str]:
                 err_msg = stderr.decode("utf-8", errors="replace")
             except Exception:
                 err_msg = str(stderr)
-            return False, err_msg[-200:]
+            # 返回完整错误信息的前端和后端（诊断关键信息通常在开头）
+            if len(err_msg) <= 300:
+                return False, err_msg
+            return False, err_msg[:200] + "\n…\n" + err_msg[-100:]
         return False, f"Exit code: {result.returncode}"
     except subprocess.TimeoutExpired:
         return False, "转换超时（超过 5 分钟）"
