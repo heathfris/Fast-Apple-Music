@@ -1,10 +1,24 @@
 """Fast Apple Music — 应用入口"""
 import sys
 import os
+
+# ⚠️ 必须在导入 PySide6 之前添加 DLL 搜索路径
+# Python 3.8+ 不再自动从 PATH 搜索 DLL，导致 qtquick2plugin.dll 加载失败
+import PySide6 as _pyside_check
+_pyside_dir = os.path.dirname(_pyside_check.__file__)
+os.add_dll_directory(_pyside_dir)
+del _pyside_check, _pyside_dir
+
 import tempfile
 import json
 from datetime import datetime
-from PySide6.QtCore import QUrl, QObject, Slot, Signal, Property, QTimer
+
+# 确保项目根目录在 sys.path 中（不需要依赖 PYTHONPATH 环境变量）
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from PySide6.QtCore import QUrl, QObject, Slot, Signal, Property
 from PySide6.QtGui import QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QFileDialog, QApplication
@@ -15,7 +29,7 @@ from app.engine.player import PlayerController
 from app.models.audiofile import AudioFile, AudioStatus
 from app.models.task import Task, TaskType
 from app.metadata.reader import read_tags
-from app.metadata.writer import write_tags
+from app.metadata.writer import write_tags, write_lyrics as _mutagen_write_lyrics
 
 
 def _fix_frameless_window(hwnd_ptr):
@@ -60,11 +74,9 @@ def _read_lyrics(path: str) -> str:
 
 
 def _write_lyrics(path: str, lyrics: str):
-    """将歌词写入音频文件"""
+    """将歌词写入音频文件 — 单次打开，不重复读取"""
     try:
-        tags = read_tags(path)
-        tags["lyrics"] = lyrics
-        write_tags(path, tags)
+        _mutagen_write_lyrics(path, lyrics)
     except Exception:
         pass
 
@@ -94,9 +106,10 @@ class AppBridge(QObject):
         self._worker.task_failed.connect(self._on_task_failed)
         self._worker.start()
 
-        self._timer = QTimer()
-        self._timer.timeout.connect(self._sync_player)
-        self._timer.start(200)
+        # 使用播放器原生信号驱动 QML 更新，替代轮询
+        self._player.positionChanged.connect(self._on_player_state_change)
+        self._player.durationChanged.connect(self._on_player_state_change)
+        self._player.playingChanged.connect(self._on_player_state_change)
 
     # --- 文件管理 ---
 
@@ -128,6 +141,8 @@ class AppBridge(QObject):
             self._player.stop()
             self._selected_index = -1
             self.playerStateChanged.emit()
+        elif index < self._selected_index:
+            self._selected_index -= 1
         self._files.pop(index)
         self.filesChanged.emit()
 
@@ -152,7 +167,7 @@ class AppBridge(QObject):
             task = Task(
                 task_id="", task_type=TaskType.CONVERT,
                 file_path=af.path,
-                kwargs={"output_dir": self._output_dir},
+                kwargs={"output_dir": self._output_dir, "audio_file": af},
             )
             self._worker.add_task(task)
         self.filesChanged.emit()
@@ -190,23 +205,21 @@ class AppBridge(QObject):
     def select_file(self, index: int):
         if 0 <= index < len(self._files):
             self._selected_index = index
+            self.playerStateChanged.emit()
             af = self._files[index]
             target = af.output_path if af.output_path else af.path
-            # 读取标签
+            # 读取标签（歌词随 tags 一起返回，不再同步阻塞）
             task = Task(
                 task_id="", task_type=TaskType.READ_TAGS,
                 file_path=target, kwargs={},
             )
             self._worker.add_task(task)
-            # 读取歌词
-            lyrics = _read_lyrics(target)
-            self.lyricsLoaded.emit(lyrics)
 
     # --- 元数据 ---
 
     @Slot("QVariantMap")
     def save_tags(self, tags: dict):
-        if self._selected_index < 0:
+        if self._selected_index < 0 or self._selected_index >= len(self._files):
             return
         af = self._files[self._selected_index]
         target = af.output_path if af.output_path else af.path
@@ -318,18 +331,29 @@ class AppBridge(QObject):
                     self._files[i] = result
                     self._add_history(
                         f.path, result.output_path,
-                        "成功" if result.status == AudioStatus.DONE else "失败"
+                        "成功" if result.status in (AudioStatus.DONE, AudioStatus.TAGGED) else "失败"
                     )
                     break
             self.filesChanged.emit()
         elif isinstance(result, dict) and "title" in result:
             self._last_tags = result
             self.tagsLoaded.emit(result)
+            if "lyrics" in result:
+                self.lyricsLoaded.emit(result.get("lyrics", ""))
 
     def _on_task_failed(self, task_id: str, error: str):
         print(f"Task {task_id} failed: {error}")
+        # 找到第一个 PROCESSING 状态的文件并标记为 FAILED
+        for f in self._files:
+            if f.status == AudioStatus.PROCESSING:
+                f.status = AudioStatus.FAILED
+                f.error_message = str(error)[:200]
+                self._add_history(f.path, f.output_path, "失败")
+                break
+        self.filesChanged.emit()
 
-    def _sync_player(self):
+    def _on_player_state_change(self):
+        """播放器状态变化时通知 QML"""
         self.playerStateChanged.emit()
 
     # --- QML 属性 ---

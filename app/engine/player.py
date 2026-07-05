@@ -11,6 +11,8 @@ class PlayerController(QObject):
     # 信号
     playingChanged = Signal()
     currentFileChanged = Signal()
+    positionChanged = Signal()
+    durationChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,8 +25,10 @@ class PlayerController(QObject):
         self._is_playing = False
         self._files = []  # 播放列表
 
-        # 连接播放器信号
+        # 连接播放器原生信号
         self._player.playbackStateChanged.connect(self._on_state_changed)
+        self._player.positionChanged.connect(self.positionChanged.emit)
+        self._player.durationChanged.connect(self.durationChanged.emit)
 
     def _on_state_changed(self, state):
         self._is_playing = (state == QMediaPlayer.PlayingState)

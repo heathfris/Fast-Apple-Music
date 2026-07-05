@@ -71,7 +71,8 @@ class TaskWorker(QThread):
     def _run_convert(self, task: Task):
         """执行转换任务"""
         output_dir = task.kwargs.get("output_dir", "")
-        af = self._engine.analyze(task.file_path)
+        # 优先使用已分析好的 AudioFile，避免重复 ffprobe
+        af = task.kwargs.get("audio_file") or self._engine.analyze(task.file_path)
 
         # 进度模拟（ffmpeg 子进程本身不输出百分比，按阶段汇报）
         self.task_progress.emit(task.task_id, 10)

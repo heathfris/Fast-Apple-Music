@@ -6,7 +6,7 @@ from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.id3 import (
     ID3, TIT2, TPE1, TALB, TPE2, TCOM,
-    TDRC, TCON, APIC
+    TDRC, TCON, APIC, USLT
 )
 
 
@@ -136,3 +136,28 @@ def _set_mp4(audio, tag_key: str, dict_key: str, tags: dict):
     val = tags.get(dict_key, "")
     if val:
         audio[tag_key] = [str(val)]
+
+
+def write_lyrics(path: str, lyrics: str):
+    """将歌词写入音频文件 — 一次打开，读写合并"""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"文件不存在: {path}")
+
+    audio = MutagenFile(path)
+    if audio is None:
+        raise ValueError(f"不支持的文件格式: {path}")
+
+    if isinstance(audio, MP3):
+        if audio.tags is None:
+            audio.tags = ID3()
+        # 清除旧 USLT 帧
+        for k in list(audio.tags.keys()):
+            if k.startswith("USLT"):
+                del audio.tags[k]
+        audio.tags.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
+    elif isinstance(audio, FLAC):
+        audio["lyrics"] = lyrics
+    elif isinstance(audio, MP4):
+        audio["\xa9lyr"] = [lyrics]
+
+    audio.save()

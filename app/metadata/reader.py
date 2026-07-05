@@ -37,6 +37,11 @@ def read_tags(path: str) -> dict:
             tags["composer"] = _get_text(id3, "TCOM")
             tags["year"] = _get_text(id3, "TDRC") or _get_text(id3, "TYER")
             tags["genre"] = _get_text(id3, "TCON")
+            # 歌词 (USLT)
+            for key in id3:
+                if key.startswith("USLT"):
+                    tags["lyrics"] = str(id3[key].text)
+                    break
             # 专辑封面
             for key in id3:
                 if key.startswith("APIC"):
@@ -52,6 +57,8 @@ def read_tags(path: str) -> dict:
         tags["composer"] = _get_vorbis(audio, "composer")
         tags["year"] = _get_vorbis(audio, "date")
         tags["genre"] = _get_vorbis(audio, "genre")
+        # FLAC 歌词
+        tags["lyrics"] = _get_vorbis(audio, "lyrics")
         # FLAC 封面
         if audio.pictures:
             tags["cover_data"] = audio.pictures[0].data
@@ -65,6 +72,8 @@ def read_tags(path: str) -> dict:
         tags["composer"] = _get_mp4(audio, "\xa9wrt")
         tags["year"] = _get_mp4(audio, "\xa9day")
         tags["genre"] = _get_mp4(audio, "\xa9gen")
+        # M4A 歌词 (©lyr)
+        tags["lyrics"] = _get_mp4(audio, "\xa9lyr")
         # M4A 封面
         covr = audio.get("\xa9cov", [])
         if covr:
@@ -77,7 +86,8 @@ def _empty_tags() -> dict:
     return {
         "title": "", "artist": "", "album": "",
         "album_artist": "", "composer": "",
-        "year": "", "genre": "", "cover_data": None
+        "year": "", "genre": "", "cover_data": None,
+        "lyrics": "",
     }
 
 
