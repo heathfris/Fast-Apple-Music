@@ -16,16 +16,19 @@ Rectangle {
         target: bridge
         function onFilesChanged() {
             fileList.files = bridge.get_all_files();
-            // 清理已经不存在的索引
+            // 清理已经不存在的索引（已删除的文件）
             var valid = [];
+            var removed = false;
             for (var i = 0; i < fileList.selectedIndices.length; i++) {
                 if (fileList.selectedIndices[i] < fileList.files.length) {
                     valid.push(fileList.selectedIndices[i]);
+                } else {
+                    removed = true;
                 }
             }
             fileList.selectedIndices = valid;
-            // 刷新右侧元数据（删除后自动更新或清空）
-            if (typeof bridge !== "undefined") {
+            // 仅在有文件被删除时才刷新元数据（转换完成的状态更新不刷新）
+            if (removed && typeof bridge !== "undefined") {
                 bridge.load_selected_tags(fileList.selectedIndices);
             }
         }

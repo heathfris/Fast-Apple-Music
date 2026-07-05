@@ -54,12 +54,10 @@ class PlayerController(QObject):
         """播放指定文件"""
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.play()
-        self._is_playing = True
-        self.playingChanged.emit()
 
     @Slot()
     def toggle_play(self):
-        """播放/暂停切换 — _on_state_changed 通过信号自动更新 _is_playing"""
+        """播放/暂停切换"""
         if self._is_playing:
             self._player.pause()
         else:
@@ -70,15 +68,11 @@ class PlayerController(QObject):
     @Slot()
     def pause(self):
         self._player.pause()
-        self._is_playing = False
-        self.playingChanged.emit()
 
     @Slot()
     def stop(self):
         self._player.stop()
         self._player.setSource(QUrl())  # 释放文件句柄
-        self._is_playing = False
-        self.playingChanged.emit()
 
     def volume(self) -> float:
         return self._audio_output.volume()

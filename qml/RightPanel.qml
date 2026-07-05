@@ -560,10 +560,33 @@ Rectangle {
                         onClicked: {
                             if (typeof bridge !== "undefined" && rightPanel.currentIndices.length > 0) {
                                 var path = bridge.export_lyrics(rightPanel.currentIndices, rightPanel.currentLyrics);
-                                if (path) rightPanel.currentLyrics = "\n[导出: " + path + "]";
+                                if (path) {
+                                    exportPathLabel.text = "已导出: " + path;
+                                    exportPathLabel.visible = true;
+                                    exportPathTimer.restart();
+                                }
                             }
                         }
                     }
+
+                    // 导出成功提示
+                    Text {
+                        id: exportPathLabel
+                        text: ""
+                        color: "#34C759"
+                        font.pixelSize: 11
+                        elide: Text.ElideMiddle
+                        visible: false
+                    }
+                    Timer {
+                        id: exportPathTimer
+                        interval: 5000
+                        repeat: false
+                        onTriggered: exportPathLabel.visible = false
+                    }
+
+                    // 底部留白
+                    Item { Layout.preferredHeight: 60 }
                 }
             }
         }

@@ -6,7 +6,8 @@ import os
 # Python 3.8+ 不再自动从 PATH 搜索 DLL，导致 qtquick2plugin.dll 加载失败
 import PySide6 as _pyside_check
 _pyside_dir = os.path.dirname(_pyside_check.__file__)
-os.add_dll_directory(_pyside_dir)
+if hasattr(os, "add_dll_directory"):
+    os.add_dll_directory(_pyside_dir)
 del _pyside_check, _pyside_dir
 
 import tempfile
@@ -83,12 +84,28 @@ def _apply_win11_rounded_corners(hwnd_ptr):
 
 
 def _read_lyrics(path: str) -> str:
-    """从音频文件中读取歌词"""
+    """从音频文件中直接读取歌词（不通过 read_tags）"""
     try:
-        tags = read_tags(path)
-        return tags.get("lyrics", "")
+        from mutagen import File as MutagenFile
+        from mutagen.mp3 import MP3
+        from mutagen.flac import FLAC
+        from mutagen.mp4 import MP4
+        audio = MutagenFile(path)
+        if audio is None:
+            return ""
+        if isinstance(audio, MP3):
+            if audio.tags:
+                for key in audio.tags:
+                    if key.startswith("USLT"):
+                        return str(audio.tags[key].text)
+        elif isinstance(audio, FLAC):
+            return str(audio.get("lyrics", [""])[0]) if audio.get("lyrics") else ""
+        elif isinstance(audio, MP4):
+            l = audio.get("\xa9lyr", [])
+            return str(l[0]) if l else ""
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 def _write_lyrics(path: str, lyrics: str):
@@ -501,8 +518,9 @@ class AppBridge(QObject):
                 self.lyricsLoaded.emit(result.get("lyrics", ""))
 
     def _on_task_failed(self, task_id: str, error: str):
+        """根据 task 中的 file_path 精确匹配失败文件"""
         print(f"Task {task_id} failed: {error}")
-        # 找到第一个 PROCESSING 状态的文件并标记为 FAILED
+        # 遍历文件列表，通过 path/output_path 匹配失败任务
         for f in self._files:
             if f.status == AudioStatus.PROCESSING:
                 f.status = AudioStatus.FAILED
